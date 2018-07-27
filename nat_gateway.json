@@ -1,0 +1,182 @@
+{
+  "ROSTemplateFormatVersion": "2015-09-01",
+  "Description": "Create NatGateway and bind a EIP on a SNAT entry",
+  "Parameters": {
+    "VpcCidrBlock": {
+      "Type": "String",
+      "AllowedValues": [
+        "192.168.0.0/16",
+        "172.16.0.0/12",
+        "10.0.0.0/8"
+      ],
+      "Default": "192.168.0.0/16"
+    },
+    "EIPInternetChargeType": {
+      "Type": "String",
+      "Description": "The charge type of elastic public internet IP: PayByBandwidth(billing by fixed bandwidth), PayByTraffic(billing by traffic). The billing by fixed bandwidth and traffic is in days and hours respectively.",
+      "AllowedValues": [
+        "PayByBandwidth",
+        "PayByTraffic"
+      ],
+      "Default": "PayByTraffic"
+    },
+    "EIPBandwidth": {
+      "Type": "Number",
+      "Description": "The speed of elastic public internet IP. The default is 5 Mbps.",
+      "MinValue": 1,
+      "MaxValue": 200,
+      "Default": 5
+    },
+    "VSwitchCidrBlock": {
+      "Type": "String",
+      "Description": "The VSwitch subnet within VPC",
+      "Default": "192.168.10.0/24"
+    }
+  },
+  "Resources": {
+    "ElasticIp": {
+      "Type": "ALIYUN::VPC::EIP",
+      "Properties": {
+        "Bandwidth": {
+          "Ref": "EIPBandwidth"
+        },
+        "InternetChargeType": {
+          "Ref": "EIPInternetChargeType"
+        }
+      }
+    },
+    "VSwitch": {
+      "Type": "ALIYUN::ECS::VSwitch",
+      "Properties": {
+        "VpcId": {
+          "Fn::GetAtt": [
+            "Vpc",
+            "VpcId"
+          ]
+        },
+        "ZoneId": {
+          "Fn::Select": [
+            "0",
+            {
+              "Fn::GetAZs": {
+                "Ref": "ALIYUN::Region"
+              }
+            }
+          ]
+        },
+        "CidrBlock": {
+          "Ref": "VSwitchCidrBlock"
+        },
+        "VSwitchName": "ROS_natgateway"
+      }
+    },
+    "Vpc": {
+      "Type": "ALIYUN::ECS::VPC",
+      "Properties": {
+        "CidrBlock": {
+          "Ref": "VpcCidrBlock"
+        },
+        "VpcName": "ROS_natgateway"
+      }
+    },
+    "NatGateway": {
+      "Type": "ALIYUN::ECS::NatGateway",
+      "DependsOn": "VSwitch",
+      "Properties": {
+        "VpcId": {
+          "Fn::GetAtt": [
+            "Vpc",
+            "VpcId"
+          ]
+        },
+        "VSwitchId": {
+          "Fn::GetAtt": [
+            "VSwitch",
+            "VSwitchId"
+          ]
+        },
+        "Spec": "Small"
+      }
+    },
+    "ElasticIpAssociation": {
+      "Type": "ALIYUN::VPC::EIPAssociation",
+      "Properties": {
+        "InstanceId": {
+          "Fn::GetAtt": [
+            "NatGateway",
+            "NatGatewayId"
+          ]
+        },
+        "AllocationId": {
+          "Fn::GetAtt": [
+            "ElasticIp",
+            "AllocationId"
+          ]
+        },
+        "InstanceType": "Nat"
+      }
+    },
+    "SNatEntry": {
+      "Type": "ALIYUN::ECS::SNatEntry",
+      "DependsOn": "ElasticIpAssociation",
+      "Properties": {
+        "SourceVSwitchId": {
+          "Fn::GetAtt": [
+            "VSwitch",
+            "VSwitchId"
+          ]
+        },
+        "SNatTableId": {
+          "Fn::GetAtt": [
+            "NatGateway",
+            "SNatTableId"
+          ]
+        },
+        "SNatIp": {
+          "Fn::GetAtt": [
+            "ElasticIp",
+            "EipAddress"
+          ]
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "VpcId": {
+      "Description": "generated security vpc id for VPC.",
+      "Value": {
+        "Fn::GetAtt": [
+          "Vpc",
+          "VpcId"
+        ]
+      }
+    },
+    "VSwitchId": {
+      "Description": "generated security vswitch id for VPC.",
+      "Value": {
+        "Fn::GetAtt": [
+          "VSwitch",
+          "VSwitchId"
+        ]
+      }
+    },
+    "EipAddress": {
+      "Description": "IP address of created EIP.",
+      "Value": {
+        "Fn::GetAtt": [
+          "ElasticIp",
+          "EipAddress"
+        ]
+      }
+    },
+    "NatGatewayId": {
+      "Description": "generated natgateway id",
+      "Value": {
+        "Fn::GetAtt": [
+          "NatGateway",
+          "NatGatewayId"
+        ]
+      }
+    }
+  }
+}
